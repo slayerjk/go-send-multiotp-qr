@@ -3,5 +3,6 @@
 
 # except
 !/cmd/send-multioptp-qr/main.go
+!/internal/qrwork/qrwork.go
 !README.md
 !.gitignore
