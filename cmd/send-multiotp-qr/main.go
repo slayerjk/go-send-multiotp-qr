@@ -13,9 +13,7 @@ import (
 
 	mailing "github.com/slayerjk/go-mailing"
 	multiotp "github.com/slayerjk/go-multiotpwork"
-	"github.com/slayerjk/go-send-multiotp-qr/internal/qrwork"
 	vafswork "github.com/slayerjk/go-vafswork"
-	// vawebwork "github.com/slayerjk/go-vawebwork"
 )
 
 const (
@@ -24,16 +22,9 @@ const (
 
 // define user
 type User struct {
-	name       string
-	email      string
-	qrFailed   bool
-	mailFailed bool
+	name  string
+	email string
 }
-
-// for dep injection
-// type application struct {
-// 	logger *slog.Logger
-// }
 
 func main() {
 	// defining default values
@@ -41,21 +32,20 @@ func main() {
 		workDir         string    = vafswork.GetExePath()
 		logsPathDefault string    = workDir + "/logs" + "_" + appName
 		startTime       time.Time = time.Now()
-		// mailingFileDefault       string = workDir + "/data/mailing.json"
-		newUsers    []User
-		failedUsers []string
+		succeededUsers  []User
+		failedUsers     []User
 	)
 
-	// flags
+	// logging flags
 	logsDir := flag.String("log-dir", logsPathDefault, "set custom log dir")
 	logsToKeep := flag.Int("keep-logs", 7, "set number of logs to keep after rotation")
+	// multiotp flags
 	multiOTPBinPath := flag.String("mpath", "/usr/local/bin/multiotp/multiotp.php", "full path to multiotp binary")
 	qrCodesPath := flag.String("qrpath", "/etc/multiotp/qrcodes", "qr codes full path to save")
 	usersPath := flag.String("upath", "/etc/multiotp/users", "MultiOTP users dir(*.db files)")
-	// user := flag.String("user", "NONE", "user name to generate qr(ususally in /etc/multiotp/users)")
 	tokenDescr := flag.String("tdescr", "TEST-SRV-OTP", "token description")
+	// mail flags
 	emailText := flag.String("etext", "Your OTP QR", "email text above QR code")
-	// mail flages
 	mailHost := flag.String("mhost", "mail.example.com", "mail host(ip or hostname), must be valid")
 	mailPort := flag.Int("mport", 25, "mail port")
 	mailFrom := flag.String("mfrom", "multiotp@example.com", "mail from address, domain will be used as users' domain")
@@ -63,7 +53,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.0.0")
+		fmt.Println("Version = 0.0.1")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -106,11 +96,6 @@ func main() {
 	if err := vafswork.RotateFilesByMtime(*logsDir, *logsToKeep); err != nil {
 		fmt.Fprintf(os.Stdout, "failed to rotate logs:\n\t%v", err)
 	}
-
-	// setting application struct with dep injection
-	// app := &application{
-	// 	logger: logger,
-	// }
 
 	// 1) resync ldap users at start
 	logger.Info("start to resync LDAP users")
@@ -164,52 +149,40 @@ func main() {
 			if isUserAndQRMatched == 0 {
 				newUser := strings.Trim(userMatch[1], " ")
 
-				// 4) generate qrs for user without qr (qrReady=false)
+				// 4) generate PNG qrs for user without qr
 				logger.Info("generating qr for user", "user", newUser)
-				err := multiotp.GenerateMultiOTPQRPng(*multiOTPBinPath, userMatch[1], *qrCodesPath)
+				err := multiotp.GenerateMultiOTPQRPng(*multiOTPBinPath, newUser, *qrCodesPath)
 				if err != nil {
 					logger.Warn("Failed to generate user's QR png, skipping", "user", newUser, "err", err)
-					failedUsers = append(failedUsers, newUser)
+					failedUsers = append(failedUsers, User{name: newUser})
 					continue
 				}
+				userQrPngPath := fmt.Sprintf("%s/%s.png", *qrCodesPath, newUser)
 
-				// 5) generate totpURL for new user
-				logger.Info("generating totpURL for user", "user", newUser)
-				totpURL, err := multiotp.GetMultiOTPTokenURL(newUser, *multiOTPBinPath, *tokenDescr)
-				if err != nil {
-					logger.Warn("failed generating totpURL, skipping this user", "user", newUser, "err", err)
-					failedUsers = append(failedUsers, newUser)
-					continue
-				}
-
-				// 6) generating SVG code for totpURL
-				logger.Info("generating SVG code for totpURL", "user", newUser)
-				svgCode, err := qrwork.GenerateTOTPSvgQrHTML(totpURL)
-				if err != nil {
-					logger.Info("failed generating SVG code for totpURL, skipping", "user", newUser, "err", err)
-					failedUsers = append(failedUsers, newUser)
-					continue
-				}
-
-				// 6) send email to user with new generated qr
+				// 5) send email to user with new generated qr
 				logger.Info("sending QR to user", "user", newUser)
 				newUserMail := fmt.Sprintf("%s@%s", newUser, userDomain)
-				body := fmt.Sprintf(`<html><body><p>%s: %s</p><p>%s</p></body></html>`, *emailText, *tokenDescr, svgCode)
-				err = mailing.SendHtmlEmailWoAuth(*mailHost, *mailPort, *mailFrom, *mailSubject, string(body), []string{newUserMail})
+				body := fmt.Sprintf("<html><body><p>%s: %s</p></body></html>", *emailText, *tokenDescr)
+				err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, string(body), []string{newUserMail}, []string{userQrPngPath})
 				if err != nil {
 					logger.Warn("failed to send email to user, skipping", "user", newUser, "err", err)
-					failedUsers = append(failedUsers, newUser)
+					failedUsers = append(failedUsers, User{name: newUser, email: newUserMail})
 					continue
 				}
 
-				newUsers = append(newUsers, User{name: newUser, email: newUserMail})
+				succeededUsers = append(succeededUsers, User{name: newUser, email: newUserMail})
 			}
 		}
 	}
 
-	fmt.Println("Done, succeeded users:\n\t", newUsers)
+	if len(succeededUsers) != 0 {
+		logger.Info("new users processed\n\t", "users", succeededUsers)
+	} else {
+		logger.Info("no new users processed")
+	}
+
 	if len(failedUsers) != 0 {
-		fmt.Println("failed users:\n\t", failedUsers)
+		logger.Info("failed users:\n\t", "failedUsers", failedUsers)
 	}
 
 	// count & print estimated time
