@@ -14,6 +14,7 @@ import (
 
 	mailing "github.com/slayerjk/go-mailing"
 	multiotp "github.com/slayerjk/go-multiotpwork"
+	"github.com/slayerjk/go-send-multiotp-qr/internal/helpers"
 	vafswork "github.com/slayerjk/go-vafswork"
 )
 
@@ -53,31 +54,24 @@ func main() {
 	multiOTPBinPath := flag.String("mpath", "/usr/local/bin/multiotp/multiotp.php", "full path to multiotp binary")
 	qrCodesPath := flag.String("qrpath", "/etc/multiotp/qrcodes", "qr codes full path to save")
 	usersPath := flag.String("upath", "/etc/multiotp/users", "MultiOTP users dir(*.db files)")
-	tokenDescr := flag.String("tdescr", "TEST-SRV-OTP", "token description")
+	issuerDescr := flag.String("idesc", "TEST-SRV-OTP", "issuer(your MultiOTP server) description")
 	// mail flags
-	emailText := flag.String("etext", "Your OTP QR", "email text above QR code")
+	emailText := flag.String("etext", "Your OTP QR", "email text in email body, will be used along with 'idesc'")
 	mailHost := flag.String("mhost", "mail.example.com", "mail host(ip or hostname), must be valid")
 	mailPort := flag.Int("mport", 25, "mail port")
 	mailFrom := flag.String("mfrom", "multiotp@example.com", "mail from address, domain will be used as users' domain")
 	mailSubject := flag.String("msubj", "Your QR Code", "mail subject, date and time will be added in the end")
+	mailAdmins := flag.String("madmins", "NONE", "admins' emails separated by coma")
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.0.2")
+		fmt.Println("Version = 0.1.0")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
 	}
 
 	flag.Parse()
-
-	// setting user domain
-	userDomain := strings.Split(*mailFrom, "@")[1]
-	if len(userDomain) == 0 {
-		fmt.Println("check 'mailFrom' domain, cannot be empty after '@'")
-		// consider to send report to admin
-		os.Exit(1)
-	}
 
 	// logging
 	// create log dir
@@ -110,6 +104,34 @@ func main() {
 		fmt.Fprintf(os.Stdout, "failed to rotate logs:\n\t%v", err)
 	}
 
+	// check admins mails
+	// skip if "NONE" or wrong mails
+	mailToAdminIsOn := false
+	adminsList := make([]string, 0)
+	reportSubject := fmt.Sprintf("Report - %s", *issuerDescr)
+	if *mailAdmins != "NONE" {
+		adminsList = strings.Split(*mailAdmins, ",")
+		mailToAdminIsOn = true
+	}
+
+	// setting user domain
+	userDomain := strings.Split(*mailFrom, "@")[1]
+	if len(userDomain) == 0 {
+		fmt.Println("check 'mailFrom' domain, cannot be empty after '@'")
+		logger.Error("wrong mailFrom domain", "mailFrom", *mailFrom)
+
+		// send report to admin
+		if mailToAdminIsOn {
+			logger.Info("sending admin report")
+			err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+			if err != nil {
+				logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
+			}
+		}
+
+		os.Exit(1)
+	}
+
 	// 1) resync ldap users at start
 	go func() {
 		logger.Info("start to resync LDAP users")
@@ -117,7 +139,15 @@ func main() {
 		if err != nil {
 			logger.Error("failed to resync LDAP users of MultiOTP", "err", err)
 			fmt.Println("err, check log")
-			// consider to send report to admin
+			// send report to admin
+			if mailToAdminIsOn {
+				logger.Info("sending admin report")
+				err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+				if err != nil {
+					logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
+				}
+			}
+
 			os.Exit(1)
 		}
 		logger.Info("done resync LDAP users")
@@ -138,7 +168,15 @@ func main() {
 		if err != nil {
 			logger.Error("failed to read Users dir of MultiOTP", "err", err)
 			fmt.Println("err, check log")
-			// consider to send report to admin
+			// send report to admin
+			if mailToAdminIsOn {
+				logger.Info("sending admin report")
+				err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+				if err != nil {
+					logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
+				}
+			}
+
 			os.Exit(1)
 		}
 
@@ -158,7 +196,15 @@ func main() {
 				if err != nil {
 					logger.Error("Failed to read QR codes dir of MultiOTP", "err", err)
 					fmt.Println("err, check log")
-					// consider to send report to admin
+					// send report to admin
+					if mailToAdminIsOn {
+						logger.Info("sending admin report")
+						err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+						if err != nil {
+							logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
+						}
+					}
+
 					os.Exit(1)
 				}
 
@@ -177,7 +223,6 @@ func main() {
 				}
 				if isUserAndQRMatched == 0 {
 					newUser := strings.Trim(userMatch[1], " ")
-					// send to channel
 					chanGenQr <- newUser
 				}
 			}
@@ -222,13 +267,13 @@ func main() {
 			logger.Info("sending QR to user", "user", newUser.name)
 
 			newUser.email = fmt.Sprintf("%s@%s", newUser.name, userDomain)
-			body := fmt.Sprintf("<html><body><p>%s: %s</p></body></html>", *emailText, *tokenDescr)
+			body := fmt.Sprintf("<html><body><p>%s: %s</p></body></html>", *emailText, *issuerDescr)
 
-			err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, string(body), []string{newUser.email}, []string{newUser.qrPath})
+			err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, body, []string{newUser.email}, []string{newUser.qrPath})
 			if err != nil {
 				logger.Warn("failed to send email to user, skipping", "user", newUser, "err", err)
 				failedUsers = append(failedUsers, User{name: newUser.name, email: newUser.email})
-				// consider del png file for this user
+				// TODO: del png file for this user
 				continue
 			}
 
@@ -243,17 +288,28 @@ func main() {
 	// data for report
 	if len(succeededUsers) != 0 {
 		logger.Info("new users processed", "users", succeededUsers)
-		// consider to send report to admin
 	} else {
 		logger.Info("no new users processed")
 	}
 	// data for report
 	if len(failedUsers) != 0 {
 		logger.Info("failed users:", "failedUsers", failedUsers)
-		// consider to send report to admin
 	}
 
 	// count & print estimated time
 	endTime := time.Now()
 	logger.Info("Program Done", slog.Any("estimated time(sec)", endTime.Sub(startTime).Seconds()))
+
+	// send report to admin
+	if len(succeededUsers) != 0 || len(failedUsers) != 0 {
+		if mailToAdminIsOn {
+			logger.Info("sending FINAL report to admin")
+			reportSubject += "(FINAL)"
+			finalReportBody := fmt.Sprintf("Succeeded users:\n\t%v\nFailed users:\n\t%v", succeededUsers, failedUsers)
+			err := mailing.SendEmailWoAuth("plain", *mailHost, *mailPort, *mailFrom, reportSubject, finalReportBody, adminsList, nil)
+			if err != nil {
+				logger.Warn("failed to send FINAL report to admins", "admins", adminsList, "err", err)
+			}
+		}
+	}
 }

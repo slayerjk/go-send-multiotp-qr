@@ -38,4 +38,7 @@ Workflow is following:
 	mailPort := flag.Int("mport", 25, "mail port")
 	mailFrom := flag.String("mfrom", "multiotp@example.com", "mail from address, domain will be used as users' domain")
 	mailSubject := flag.String("msubj", "Your QR Code", "mail subject, date and time will be added in the end")
+	mailAdmins := flag.String("madmins", "NONE", "admins' emails separated by coma")
 ```
+
+If app done successfully(no exit codes to the end) - sends list of succeeded and failed users(if one of their len is not 0) to admins(if madmins not "NONE").
