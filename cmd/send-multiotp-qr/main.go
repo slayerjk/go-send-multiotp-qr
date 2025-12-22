@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	// change this path for your project
@@ -22,8 +23,9 @@ const (
 
 // define user
 type User struct {
-	name  string
-	email string
+	name   string
+	email  string
+	qrPath string
 }
 
 func main() {
@@ -34,7 +36,15 @@ func main() {
 		startTime       time.Time = time.Now()
 		succeededUsers  []User
 		failedUsers     []User
+		wg              sync.WaitGroup
 	)
+
+	// setting channels
+	chanDone := make(chan string)
+	chanGenQr := make(chan string)
+	chanSendMail := make(chan User)
+
+	wg.Add(1)
 
 	// logging flags
 	logsDir := flag.String("log-dir", logsPathDefault, "set custom log dir")
@@ -53,7 +63,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.0.1")
+		fmt.Println("Version = 0.0.2")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -65,6 +75,7 @@ func main() {
 	userDomain := strings.Split(*mailFrom, "@")[1]
 	if len(userDomain) == 0 {
 		fmt.Println("check 'mailFrom' domain, cannot be empty after '@'")
+		// consider to send report to admin
 		os.Exit(1)
 	}
 
@@ -72,6 +83,7 @@ func main() {
 	// create log dir
 	if err := os.MkdirAll(*logsDir, os.ModePerm); err != nil {
 		fmt.Fprintf(os.Stdout, "failed to create log dir %s:\n\t%v", *logsDir, err)
+		// consider to send report to admin
 		os.Exit(1)
 	}
 	// set current date
@@ -82,6 +94,7 @@ func main() {
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Fprintf(os.Stdout, "failed to open created log file %s:\n\t%v", logFilePath, err)
+		// consider to send report to admin
 		os.Exit(1)
 	}
 	defer logFile.Close()
@@ -98,91 +111,146 @@ func main() {
 	}
 
 	// 1) resync ldap users at start
-	logger.Info("start to resync LDAP users")
-	err = multiotp.ResyncMultiOTPUsers(*multiOTPBinPath)
-	if err != nil {
-		logger.Error("failed to resync LDAP users of MultiOTP", "err", err)
-		fmt.Println("err, check log")
-		os.Exit(1)
-	}
-	logger.Info("done resync LDAP users")
-
-	// 2) collect all users which are already in users' dir of multiotp
-	logger.Info("started to collect all users which are already in users' dir of multiotp")
-	correctUserFile := regexp.MustCompile(`^(\w+)\.db$`)
-	dirEntry, err := os.ReadDir(*usersPath)
-	if err != nil {
-		logger.Error("failed to read Users dir of MultiOTP", "err", err)
-		fmt.Println("err, check log")
-		os.Exit(1)
-	}
-
-	for _, file := range dirEntry {
-		if file.IsDir() {
-			continue
+	go func() {
+		logger.Info("start to resync LDAP users")
+		err = multiotp.ResyncMultiOTPUsers(*multiOTPBinPath)
+		if err != nil {
+			logger.Error("failed to resync LDAP users of MultiOTP", "err", err)
+			fmt.Println("err, check log")
+			// consider to send report to admin
+			os.Exit(1)
 		}
-		userMatch := correctUserFile.FindStringSubmatch(file.Name())
+		logger.Info("done resync LDAP users")
 
-		if userMatch != nil {
-			// 3) check qr codes dir if users already have generated .png file
-			correctUserQRFile := regexp.MustCompile(`^(\w+)\.png$`)
-			dirEntry, err = os.ReadDir(*qrCodesPath)
-			if err != nil {
-				logger.Error("Failed to read QR codes dir of MultiOTP", "err", err)
-				fmt.Println("err, check log")
-				os.Exit(1)
+		chanDone <- "DONE"
+		close(chanDone)
+	}()
+
+	// searching for new users
+	go func() {
+		// waiting resync ldap is done
+		<-chanDone
+
+		// 2) collecting all users in users dir of multiotp
+		logger.Info("collecting all NEW users")
+		correctUserFile := regexp.MustCompile(`^(\w+)\.db$`)
+		dirEntry, err := os.ReadDir(*usersPath)
+		if err != nil {
+			logger.Error("failed to read Users dir of MultiOTP", "err", err)
+			fmt.Println("err, check log")
+			// consider to send report to admin
+			os.Exit(1)
+		}
+
+		for _, file := range dirEntry {
+			if file.IsDir() {
+				continue
 			}
 
-			isUserAndQRMatched := 0
-			for _, file := range dirEntry {
-				if file.IsDir() {
-					continue
+			userMatch := correctUserFile.FindStringSubmatch(file.Name())
+
+			if userMatch != nil {
+				// 3) check qr codes dir if users already have generated .png file
+				// if user don't hanve .png qr thus it's a new user
+				correctUserQRFile := regexp.MustCompile(`^(\w+)\.png$`)
+				dirEntry, err = os.ReadDir(*qrCodesPath)
+
+				if err != nil {
+					logger.Error("Failed to read QR codes dir of MultiOTP", "err", err)
+					fmt.Println("err, check log")
+					// consider to send report to admin
+					os.Exit(1)
 				}
-				qRMatch := correctUserQRFile.FindStringSubmatch(file.Name())
-				if qRMatch != nil {
-					if userMatch[1] == qRMatch[1] {
-						isUserAndQRMatched += 1
-						break
+
+				isUserAndQRMatched := 0
+				for _, file := range dirEntry {
+					if file.IsDir() {
+						continue
+					}
+					qRMatch := correctUserQRFile.FindStringSubmatch(file.Name())
+					if qRMatch != nil {
+						if userMatch[1] == qRMatch[1] {
+							isUserAndQRMatched += 1
+							break
+						}
 					}
 				}
-			}
-			if isUserAndQRMatched == 0 {
-				newUser := strings.Trim(userMatch[1], " ")
-
-				// 4) generate PNG qrs for user without qr
-				logger.Info("generating qr for user", "user", newUser)
-				err := multiotp.GenerateMultiOTPQRPng(*multiOTPBinPath, newUser, *qrCodesPath)
-				if err != nil {
-					logger.Warn("Failed to generate user's QR png, skipping", "user", newUser, "err", err)
-					failedUsers = append(failedUsers, User{name: newUser})
-					continue
+				if isUserAndQRMatched == 0 {
+					newUser := strings.Trim(userMatch[1], " ")
+					// send to channel
+					chanGenQr <- newUser
 				}
-				userQrPngPath := fmt.Sprintf("%s/%s.png", *qrCodesPath, newUser)
-
-				// 5) send email to user with new generated qr
-				logger.Info("sending QR to user", "user", newUser)
-				newUserMail := fmt.Sprintf("%s@%s", newUser, userDomain)
-				body := fmt.Sprintf("<html><body><p>%s: %s</p></body></html>", *emailText, *tokenDescr)
-				err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, string(body), []string{newUserMail}, []string{userQrPngPath})
-				if err != nil {
-					logger.Warn("failed to send email to user, skipping", "user", newUser, "err", err)
-					failedUsers = append(failedUsers, User{name: newUser, email: newUserMail})
-					continue
-				}
-
-				succeededUsers = append(succeededUsers, User{name: newUser, email: newUserMail})
 			}
 		}
-	}
+		close(chanGenQr)
+	}()
 
+	// 4) generate PNG qrs for user without qr
+	go func() {
+		for {
+			newUser, ok := <-chanGenQr
+			if !ok {
+				break
+			}
+
+			logger.Info("generating qr for user", "user", newUser)
+			err := multiotp.GenerateMultiOTPQRPng(*multiOTPBinPath, newUser, *qrCodesPath)
+			if err != nil {
+				logger.Warn("Failed to generate user's QR png, skipping", "user", newUser, "err", err)
+				failedUsers = append(failedUsers, User{name: newUser})
+				chanSendMail <- User{name: "SKIP"}
+				continue
+			}
+			userQrPngPath := fmt.Sprintf("%s/%s.png", *qrCodesPath, newUser)
+			chanSendMail <- User{name: newUser, qrPath: userQrPngPath}
+		}
+		close(chanSendMail)
+	}()
+
+	// 5) send email to user with new generated qr
+	go func() {
+		for {
+			newUser, ok := <-chanSendMail
+			if !ok {
+				break
+			}
+
+			if newUser.name == "SKIP" {
+				continue
+			}
+
+			logger.Info("sending QR to user", "user", newUser.name)
+
+			newUser.email = fmt.Sprintf("%s@%s", newUser.name, userDomain)
+			body := fmt.Sprintf("<html><body><p>%s: %s</p></body></html>", *emailText, *tokenDescr)
+
+			err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, string(body), []string{newUser.email}, []string{newUser.qrPath})
+			if err != nil {
+				logger.Warn("failed to send email to user, skipping", "user", newUser, "err", err)
+				failedUsers = append(failedUsers, User{name: newUser.name, email: newUser.email})
+				// consider del png file for this user
+				continue
+			}
+
+			succeededUsers = append(succeededUsers, User{name: newUser.name, email: newUser.email})
+		}
+		wg.Done()
+	}()
+
+	// wait all goroutines did their job
+	wg.Wait()
+
+	// data for report
 	if len(succeededUsers) != 0 {
-		logger.Info("new users processed\n\t", "users", succeededUsers)
+		logger.Info("new users processed", "users", succeededUsers)
+		// consider to send report to admin
 	} else {
 		logger.Info("no new users processed")
 	}
-
+	// data for report
 	if len(failedUsers) != 0 {
-		logger.Info("failed users:\n\t", "failedUsers", failedUsers)
+		logger.Info("failed users:", "failedUsers", failedUsers)
+		// consider to send report to admin
 	}
 
 	// count & print estimated time

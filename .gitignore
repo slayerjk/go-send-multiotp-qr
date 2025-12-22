@@ -5,3 +5,4 @@
 !/cmd/send-multioptp-qr/main.go
 !README.md
 !.gitignore
+!go.mod
