@@ -297,8 +297,7 @@ func main() {
 	}
 
 	// count & print estimated time
-	endTime := time.Now()
-	logger.Info("Program Done", slog.Any("estimated time(sec)", endTime.Sub(startTime).Seconds()))
+	logger.Info("Program Done", slog.Any("estimated time(sec)", time.Since(startTime).Seconds()))
 
 	// send report to admin
 	if len(succeededUsers) != 0 || len(failedUsers) != 0 {
