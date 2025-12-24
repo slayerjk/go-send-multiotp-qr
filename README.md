@@ -18,6 +18,9 @@ Workflow is following:
     <li>Get list of New users(new user IF .png file in qrCodes dir doesn't exist). So if you deleting user, also delete his/her QR file.</li>
     <li>Generate QR(PNG) for new users(it's an indicator of old user for next running)</li>
     <li>Send mail to new users with PNG(users email domain will be the same as mailFrom domain)</li>
+	<li>If send mail to new users is failed - del generated qr</li>
+	<li>If app done successfully(no exit codes to the end) - sends list of 'succeeded' and 'failed' users lists(if one of their len is not 0) to admins(if -madmins flag is not "NONE").</li>
+	<li>Send mail to admins if any exit code occurs(if -madmins flag is not "NONE").
 </ol>
 
 <h2>Flags</h2>
@@ -41,4 +44,3 @@ Workflow is following:
 	mailAdmins := flag.String("madmins", "NONE", "admins' emails separated by coma")
 ```
 
-If app done successfully(no exit codes to the end) - sends list of succeeded and failed users(if one of their len is not 0) to admins(if madmins not "NONE").

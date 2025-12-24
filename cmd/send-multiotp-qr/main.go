@@ -65,7 +65,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.1.0")
+		fmt.Println("Version = 0.1.1")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -77,7 +77,6 @@ func main() {
 	// create log dir
 	if err := os.MkdirAll(*logsDir, os.ModePerm); err != nil {
 		fmt.Fprintf(os.Stdout, "failed to create log dir %s:\n\t%v", *logsDir, err)
-		// consider to send report to admin
 		os.Exit(1)
 	}
 	// set current date
@@ -88,7 +87,6 @@ func main() {
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Fprintf(os.Stdout, "failed to open created log file %s:\n\t%v", logFilePath, err)
-		// consider to send report to admin
 		os.Exit(1)
 	}
 	defer logFile.Close()
@@ -163,7 +161,9 @@ func main() {
 
 		// 2) collecting all users in users dir of multiotp
 		logger.Info("collecting all NEW users")
+
 		correctUserFile := regexp.MustCompile(`^(\w+)\.db$`)
+
 		dirEntry, err := os.ReadDir(*usersPath)
 		if err != nil {
 			logger.Error("failed to read Users dir of MultiOTP", "err", err)
@@ -271,9 +271,14 @@ func main() {
 
 			err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, body, []string{newUser.email}, []string{newUser.qrPath})
 			if err != nil {
-				logger.Warn("failed to send email to user, skipping", "user", newUser, "err", err)
+				logger.Warn("failed to send email to user, skipping", "user", newUser.name, "err", err)
 				failedUsers = append(failedUsers, User{name: newUser.name, email: newUser.email})
-				// TODO: del png file for this user
+				// deleting generated qr
+				logger.Info("deleting generated QR png file for failed user", "qrpath", newUser.qrPath)
+				err := os.Remove(newUser.qrPath)
+				if err != nil {
+					logger.Warn("failed to delete generated QR png file for failed user", "qrpath", newUser.qrPath, "err", err)
+				}
 				continue
 			}
 
