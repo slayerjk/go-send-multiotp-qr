@@ -3,7 +3,6 @@
 
 # except
 !/cmd/send-multioptp-qr/main.go
-!internal/helpers/helpers.go
 !README.md
 !.gitignore
 !go.mod

@@ -7,4 +7,4 @@ require (
 	github.com/slayerjk/go-vafswork v0.0.3
 )
 
-require github.com/slayerjk/go-mailing v0.2.0
+require github.com/slayerjk/go-mailing v0.3.0

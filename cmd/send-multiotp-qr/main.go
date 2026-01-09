@@ -14,7 +14,6 @@ import (
 
 	mailing "github.com/slayerjk/go-mailing"
 	multiotp "github.com/slayerjk/go-multiotpwork"
-	"github.com/slayerjk/go-send-multiotp-qr/internal/helpers"
 	vafswork "github.com/slayerjk/go-vafswork"
 )
 
@@ -65,7 +64,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.1.1")
+		fmt.Println("Version = 0.1.2")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -121,7 +120,7 @@ func main() {
 		// send report to admin
 		if mailToAdminIsOn {
 			logger.Info("sending admin report")
-			err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+			err := mailing.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
 			if err != nil {
 				logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
 			}
@@ -140,7 +139,7 @@ func main() {
 			// send report to admin
 			if mailToAdminIsOn {
 				logger.Info("sending admin report")
-				err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+				err := mailing.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
 				if err != nil {
 					logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
 				}
@@ -171,7 +170,7 @@ func main() {
 			// send report to admin
 			if mailToAdminIsOn {
 				logger.Info("sending admin report")
-				err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+				err := mailing.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
 				if err != nil {
 					logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
 				}
@@ -199,7 +198,7 @@ func main() {
 					// send report to admin
 					if mailToAdminIsOn {
 						logger.Info("sending admin report")
-						err := helpers.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
+						err := mailing.SendReport(*mailHost, *mailPort, *mailFrom, reportSubject, logFilePath, adminsList, nil)
 						if err != nil {
 							logger.Warn("failed to send mail to admins", "admins", adminsList, "err", err)
 						}
