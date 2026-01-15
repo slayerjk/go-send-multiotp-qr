@@ -64,7 +64,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.1.2")
+		fmt.Println("Version = 0.1.3")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -281,7 +281,7 @@ func main() {
 				continue
 			}
 
-			succeededUsers = append(succeededUsers, User{name: newUser.name, email: newUser.email})
+			succeededUsers = append(succeededUsers, User{name: newUser.name, email: newUser.email, qrPath: newUser.qrPath})
 		}
 		wg.Done()
 	}()
