@@ -30,7 +30,7 @@ Workflow is following:
 	logsToKeep := flag.Int("keep-logs", 7, "set number of logs to keep after rotation")
 	
     // multiotp flags
-	multiOTPBinPath := flag.String("mpath", "/usr/bin/multiotp/multiotp.php", "full path to multiotp binary")
+	multiOTPBinPath := flag.String("mpath", "/usr/local/bin/multiotp/multiotp.php", "full path to multiotp binary")
 	qrCodesPath := flag.String("qrpath", "/etc/multiotp/qrcodes", "qr codes full path to save")
 	usersPath := flag.String("upath", "/etc/multiotp/users", "MultiOTP users dir(*.db files)")
 	tokenDescr := flag.String("tdescr", "TEST-SRV-OTP", "token description")
