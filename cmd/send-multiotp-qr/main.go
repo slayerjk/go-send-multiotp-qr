@@ -50,7 +50,7 @@ func main() {
 	logsDir := flag.String("log-dir", logsPathDefault, "set custom log dir")
 	logsToKeep := flag.Int("keep-logs", 7, "set number of logs to keep after rotation")
 	// multiotp flags
-	multiOTPBinPath := flag.String("mpath", "/usr/local/bin/multiotp/multiotp.php", "full path to multiotp binary")
+	multiOTPBinPath := flag.String("mpath", "/usr/bin/multiotp/multiotp.php", "full path to multiotp binary")
 	qrCodesPath := flag.String("qrpath", "/etc/multiotp/qrcodes", "qr codes full path to save")
 	usersPath := flag.String("upath", "/etc/multiotp/users", "MultiOTP users dir(*.db files)")
 	issuerDescr := flag.String("idesc", "TEST-SRV-OTP", "issuer(your MultiOTP server) description")
@@ -64,7 +64,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.1.3")
+		fmt.Println("Version = 0.1.4")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
