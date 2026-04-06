@@ -36,6 +36,7 @@ func main() {
 		startTime       time.Time = time.Now()
 		succeededUsers  []User
 		failedUsers     []User
+		failedMails     []User
 		wg              sync.WaitGroup
 	)
 
@@ -64,7 +65,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.1.4")
+		fmt.Println("Version = 0.1.5")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -271,13 +272,13 @@ func main() {
 			err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, body, []string{newUser.email}, []string{newUser.qrPath})
 			if err != nil {
 				logger.Warn("failed to send email to user, skipping", "user", newUser.name, "err", err)
-				failedUsers = append(failedUsers, User{name: newUser.name, email: newUser.email})
-				// deleting generated qr
-				logger.Info("deleting generated QR png file for failed user", "qrpath", newUser.qrPath)
-				err := os.Remove(newUser.qrPath)
-				if err != nil {
-					logger.Warn("failed to delete generated QR png file for failed user", "qrpath", newUser.qrPath, "err", err)
-				}
+				failedMails = append(failedMails, User{name: newUser.name, email: newUser.email})
+				// // deleting generated qr
+				// logger.Info("deleting generated QR png file for failed user", "qrpath", newUser.qrPath)
+				// err := os.Remove(newUser.qrPath)
+				// if err != nil {
+				// 	logger.Warn("failed to delete generated QR png file for failed user", "qrpath", newUser.qrPath, "err", err)
+				// }
 				continue
 			}
 
@@ -299,6 +300,10 @@ func main() {
 	if len(failedUsers) != 0 {
 		logger.Info("failed users:", "failedUsers", failedUsers)
 	}
+	// data for report
+	if len(failedMails) != 0 {
+		logger.Info("failed mails:", "failedMails", failedMails)
+	}
 
 	// count & print estimated time
 	logger.Info("Program Done", slog.Any("estimated time(sec)", time.Since(startTime).Seconds()))
@@ -308,7 +313,7 @@ func main() {
 		if mailToAdminIsOn {
 			logger.Info("sending FINAL report to admin")
 			reportSubject += "(FINAL)"
-			finalReportBody := fmt.Sprintf("Succeeded users:\n\t%v\nFailed users:\n\t%v", succeededUsers, failedUsers)
+			finalReportBody := fmt.Sprintf("Succeeded users:\n\t%v\nFailed users:\n\t%v\nFailed mails(QRs are generated):\n\t%v", succeededUsers, failedUsers, failedMails)
 			err := mailing.SendEmailWoAuth("plain", *mailHost, *mailPort, *mailFrom, reportSubject, finalReportBody, adminsList, nil)
 			if err != nil {
 				logger.Warn("failed to send FINAL report to admins", "admins", adminsList, "err", err)
