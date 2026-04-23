@@ -65,7 +65,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.1.5")
+		fmt.Println("Version = 0.2.0")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -113,8 +113,8 @@ func main() {
 	}
 
 	// setting user domain
-	userDomain := strings.Split(*mailFrom, "@")[1]
-	if len(userDomain) == 0 {
+	userFallbackDomain := strings.Split(*mailFrom, "@")[1]
+	if len(userFallbackDomain) == 0 {
 		fmt.Println("check 'mailFrom' domain, cannot be empty after '@'")
 		logger.Error("wrong mailFrom domain", "mailFrom", *mailFrom)
 
@@ -266,12 +266,25 @@ func main() {
 
 			logger.Info("sending QR to user", "user", newUser.name)
 
-			newUser.email = fmt.Sprintf("%s@%s", newUser.name, userDomain)
+			// check user's mail attribute first
+			logger.Info("trying to get 'mail' attribute from LDAP", "user", newUser.name)
+			userAttrs, err := multiotp.GetLdapUserInfo(*multiOTPBinPath, newUser.name)
+			if err != nil {
+				logger.Warn("failed to get user's LDAP info, falling to default mail domain", "user", newUser.name, "err", err)
+				newUser.email = fmt.Sprintf("%s@%s", newUser.name, userFallbackDomain)
+			} else {
+				newUser.email = userAttrs["mail"]
+				if len(newUser.email) == 0 {
+					logger.Warn("empty 'mail' attr of user's LDAP info, falling to default mail domain", "user", newUser.name)
+					newUser.email = fmt.Sprintf("%s@%s", newUser.name, userFallbackDomain)
+				}
+			}
+
 			body := fmt.Sprintf("<html><body><p>%s: %s</p></body></html>", *emailText, *issuerDescr)
 
 			err = mailing.SendEmailWoAuth("html", *mailHost, *mailPort, *mailFrom, *mailSubject, body, []string{newUser.email}, []string{newUser.qrPath})
 			if err != nil {
-				logger.Warn("failed to send email to user, skipping", "user", newUser.name, "err", err)
+				logger.Warn("failed to send email to user, skipping", "user", newUser.name, "user email", newUser.email, "err", err)
 				failedMails = append(failedMails, User{name: newUser.name, email: newUser.email})
 				// // deleting generated qr
 				// logger.Info("deleting generated QR png file for failed user", "qrpath", newUser.qrPath)
