@@ -65,7 +65,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println("Send MutltiOTP QRs")
-		fmt.Println("Version = 0.2.0")
+		fmt.Println("Version = 0.2.1")
 		fmt.Println("Usage: <app> [-opt] ...")
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
@@ -322,7 +322,7 @@ func main() {
 	logger.Info("Program Done", slog.Any("estimated time(sec)", time.Since(startTime).Seconds()))
 
 	// send report to admin
-	if len(succeededUsers) != 0 || len(failedUsers) != 0 {
+	if len(succeededUsers) != 0 || len(failedUsers) != 0 || len(failedMails) != 0 {
 		if mailToAdminIsOn {
 			logger.Info("sending FINAL report to admin")
 			reportSubject += "(FINAL)"
